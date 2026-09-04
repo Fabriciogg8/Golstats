@@ -1,0 +1,15 @@
+# Datos crudos (viven en el Volume de Databricks, no en el repo)
+*.json
+raw_files/
+
+# Credenciales / tokens
+*.env
+.databrickscfg
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
