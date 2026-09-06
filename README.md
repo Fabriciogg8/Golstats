@@ -1,8 +1,8 @@
 # GolStats — Football Data Engineering & Analytics Pipeline
 
-End-to-end football data engineering and analytics pipeline built with **Databricks Free Edition**, using **PySpark, Spark SQL, Delta Lake, and Unity Catalog**.
+End-to-end football data engineering and analytics pipeline built with **Databricks Free Edition**, using **PySpark, Spark SQL, Delta Lake, Unity Catalog, MLlib, and Databricks AI/BI Dashboards**.
 
-The project processes **StatsBomb Open Data** for the **2022 FIFA World Cup**, following a Medallion Architecture (Bronze → Silver → Gold).
+The project processes **StatsBomb Open Data** for the **2022 FIFA World Cup**, following a Medallion Architecture (Bronze → Silver → Gold), extended with an analytical data model, a BI dashboard, and two Machine Learning components (player clustering and goal prediction).
 
 The pipeline was initially developed and validated using a controlled subset of 10 matches and subsequently scaled to the complete competition dataset of **64 matches and 234,637 events**.
 
@@ -38,18 +38,19 @@ StatsBomb Open Data
  Data Quality Gate
         │
         ▼
-  Analytical Layer
+  Analytical Data Model
         │
    ┌────┴────┐
    ▼         ▼
-Power BI     ML
+Dashboard    ML
+          ┌──┴───┐
+          ▼      ▼
+    Clustering  Prediction
 ```
 
 ---
 
 ## Current Status
-
-### ✅ Completed
 
 The following components have been implemented and validated:
 
@@ -64,17 +65,18 @@ The following components have been implemented and validated:
 * Duplicate and grain validation.
 * Cross-layer reconciliation of official match scores against event-derived goals.
 * Handling of own goals and penalty shootout events according to their analytical meaning.
+* Star-schema analytical data model (fact and dimension tables) with referential integrity validation.
+* Databricks AI/BI Dashboard with KPI, team performance, and player leaderboard visuals.
+* Player profile clustering using K-Means.
+* Goal prediction model comparing Linear Regression and Poisson Regression.
 
-### 🚧 Planned
+### Planned
 
-Future development will extend the existing pipeline with:
+Future development will extend the existing project with:
 
-* Power BI dashboard built on the Gold datasets.
-* Advanced football analytics.
-* Feature engineering for machine learning.
-* Player profile clustering.
-* Predictive modeling.
 * Automated pipeline execution using Databricks Workflows.
+* Player position as a feature, to resolve the clustering limitation described below.
+* Additional feature engineering for the prediction model.
 
 ---
 
@@ -149,12 +151,16 @@ One row = one StatsBomb event
 
 The Gold layer contains analytical datasets designed for downstream consumption.
 
-| Table                                | Grain                         | Records |
-| ------------------------------------ | ----------------------------- | ------: |
-| `golstats.gold.partidos`             | One row per match             |      64 |
-| `golstats.gold.estadisticas_equipo`  | One row per team-match        |     128 |
-| `golstats.gold.estadisticas_jugador` | One row per player-match      |   1,996 |
-| `golstats.gold.player_tournament`    | One row per tournament player |     680 |
+| Table                                | Grain                                     | Records |
+| ------------------------------------- | ------------------------------------------ | ------: |
+| `golstats.gold.partidos`              | One row per match                          |      64 |
+| `golstats.gold.estadisticas_equipo`   | One row per team-match                     |     128 |
+| `golstats.gold.estadisticas_jugador`  | One row per player-match                   |   1,996 |
+| `golstats.gold.player_tournament`     | One row per tournament player              |     680 |
+| `golstats.gold.dim_equipo`            | One row per team (dimension)               |      32 |
+| `golstats.gold.dim_jugador`           | One row per player (dimension)             |     680 |
+| `golstats.gold.player_clusters`       | One row per player, with cluster label     |    ~460 |
+| `golstats.gold.goal_predictions`      | One row per player, with predicted goals   | test split |
 
 ---
 
@@ -239,18 +245,118 @@ The scaling process also uses incremental raw ingestion:
 
 ---
 
+## Analytical Data Model
+
+Before connecting the Gold layer to a BI tool, the tables were organized into a star schema to avoid ambiguous or many-to-many relationships.
+
+**Fact tables:**
+
+* `partidos` — match context (one row per match).
+* `estadisticas_equipo` — team performance (one row per team-match).
+* `estadisticas_jugador` — player performance (one row per player-match).
+* `player_tournament` — tournament-level player aggregate. Kept **standalone**, not related to the match-level facts, since mixing per-match and per-tournament grains in the same visual would double-count metrics.
+
+**Dimension tables:**
+
+* `dim_equipo` — one row per team, built from the distinct team names in `estadisticas_equipo`.
+* `dim_jugador` — one row per player, built from `player_tournament`.
+
+**Relationships:**
+
+```text
+dim_equipo ──< estadisticas_equipo >── partidos (via match_id)
+dim_jugador ──< estadisticas_jugador
+```
+
+`dim_equipo` is intentionally **not** related directly to `partidos`, since `partidos` has two team columns (`home_team`, `away_team`) — a direct relationship would create ambiguity about which one to filter on. Filtering by team flows through `estadisticas_equipo` instead.
+
+**Referential integrity was validated with anti-joins:**
+
+```text
+Home teams without a match in dim_equipo: 0
+Away teams without a match in dim_equipo: 0
+Players without a match in dim_jugador:   0
+```
+
+---
+
+## Dashboard
+
+A Databricks **AI/BI Dashboard** was built directly on the Gold and dimension tables (no external BI tool required, keeping the entire project self-contained within Databricks Free Edition).
+
+![Dashboard](docs/dashboard_screenshot.png)
+
+**Sections:**
+
+* **KPIs** — total matches, goals, xG, and players in the tournament.
+* **Team performance** — goals by team, and a goals-vs-xG scatter plot highlighting over/under-performing teams relative to their expected goals.
+* **Player leaderboards** — top goalscorers and top pass creators of the tournament, sourced from `player_tournament`.
+
+The dashboard definition is exported to [`dashboards/golstats_dashboard.lvdash.json`](dashboards/golstats_dashboard.lvdash.json) for reproducibility, since AI/BI dashboards are not natively tracked by Databricks Git folders.
+
+---
+
+## Machine Learning
+
+Two ML components were built on top of `player_tournament`, both intentionally scoped to be explainable rather than to maximize accuracy.
+
+### Player Profile Clustering
+
+**Goal:** group players into style-based profiles using unsupervised learning, without predefined labels.
+
+**Approach:**
+
+* Filtered to players with `matches_played >= 3` to reduce noise from low-minute players.
+* Engineered per-match rate features (goals, xG, shots, passes, pressures, recoveries per match, plus pass completion %) to avoid bias toward players who played more matches.
+* Standardized features and ran **K-Means** with `k = 4`.
+* Labeled clusters based on their average statistical profile.
+
+**Resulting profiles:**
+
+| Cluster | Players | Profile | Example players |
+|---|---|---|---|
+| Finisher | 62 | Highest goals, xG, and shots | Messi, Mbappé, Lewandowski |
+| High-volume engine | 125 | Most passes, pressures, and recoveries | Kimmich, Modrić, De Bruyne |
+| Clean possession, low defensive engagement | 126 | High pass accuracy, low volume | — |
+| Low involvement | 96 | Lowest values across most metrics | — |
+
+**Validation:** Silhouette score = **0.271** (moderate — consistent with a known limitation, see below).
+
+**Limitation:** the "Low involvement" cluster mixes two structurally different groups — genuinely low-minute players and **goalkeepers**, whose event profile (few shots, passes, and pressures in open play) looks statistically similar to a bench player even though their role is completely different. This happens because player position is not available as a feature. A future improvement would add position and either exclude goalkeepers from this clustering or model them separately.
+
+Result persisted to `golstats.gold.player_clusters`.
+
+### Goal Prediction
+
+**Goal:** predict a player's total tournament goals from underlying volume and quality metrics (xG, shots, passes, pressures, ball recoveries, matches played).
+
+Two models were compared, since goals are sparse count data (most players score 0), which violates the assumptions behind ordinary Linear Regression:
+
+| Model | RMSE | R² |
+|---|---|---|
+| Linear Regression | 0.541 | -0.054 |
+| **Poisson Regression** | **0.496** | **0.115** |
+
+Poisson regression — designed for count data — outperformed Linear Regression on both metrics. The R² remains modest, which is expected: individual goal-scoring outcomes have a large random component (a deflected shot, a favorable matchup) that a small set of underlying stats cannot fully capture from a single tournament. The model does capture directional signal — for example, both Nikola Vlašić and Randal Kolo Muani received high predicted values due to strong shot/xG volume, even though only one of them actually scored.
+
+This result is presented honestly as a modest but methodologically appropriate model, rather than an overstated one. Result persisted to `golstats.gold.goal_predictions`.
+
+---
+
 ## Technical Stack
 
-| Technology                  | Purpose                                   |
-| --------------------------- | ----------------------------------------- |
-| **Databricks Free Edition** | Development and execution environment     |
-| **PySpark**                 | Distributed data transformations          |
-| **Spark SQL**               | Data exploration and validation           |
-| **Delta Lake**              | Transactional table storage               |
-| **Unity Catalog**           | Data governance and organization          |
-| **Python**                  | Ingestion and supporting logic            |
-| **StatsBomb Open Data**     | Football event data                       |
-| **Git / GitHub**            | Version control and project documentation |
+| Technology                      | Purpose                                              |
+| -------------------------------- | ----------------------------------------------------- |
+| **Databricks Free Edition**      | Development and execution environment                 |
+| **PySpark**                      | Distributed data transformations                      |
+| **Spark SQL**                    | Data exploration and validation                       |
+| **Delta Lake**                   | Transactional table storage                            |
+| **Unity Catalog**                | Data governance and organization                       |
+| **PySpark MLlib**                | Clustering (K-Means) and regression (Linear / Poisson) |
+| **Databricks AI/BI Dashboards**  | BI visualization, built natively on Gold tables        |
+| **Python**                       | Ingestion and supporting logic                         |
+| **StatsBomb Open Data**          | Football event data                                    |
+| **Git / GitHub**                 | Version control and project documentation              |
 
 ---
 
@@ -271,7 +377,11 @@ golstats
     ├── partidos
     ├── estadisticas_equipo
     ├── estadisticas_jugador
-    └── player_tournament
+    ├── player_tournament
+    ├── dim_equipo
+    ├── dim_jugador
+    ├── player_clusters
+    └── goal_predictions
 ```
 
 Raw JSON files are stored separately in a Unity Catalog Volume:
@@ -294,21 +404,21 @@ GolStats/
 │   ├── 01_bronze_events.py
 │   ├── 02_silver_events.py
 │   ├── 03_gold_analytics.py
-│   └── 04_scale_pipeline.py
+│   ├── 04_scale_pipeline.py
+│   ├── 05_powerbi_preparation.py
+│   └── 06_ml.py
+│
+├── dashboards/
+│   └── golstats_dashboard.lvdash.json
 │
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   └── dashboard_screenshot.png
 │
 └── .gitignore
 ```
 
-The notebooks are stored in **Databricks source format** (`.py`) using:
-
-```text
-# COMMAND ----------
-```
-
-markers.
+The notebooks are stored in **Databricks source format** (`.py`) 
 
 This allows them to be imported back into a Databricks workspace and executed as notebooks.
 
@@ -346,12 +456,18 @@ To reproduce the project:
 6. Execute the notebooks in order:
 
 ```text
-00 → 01 → 02 → 03 → 04
+00 → 01 → 02 → 03 → 04 → 05 → 06
 ```
 
 The ingestion notebook downloads the required StatsBomb event data.
 
-The remaining notebooks transform and validate the data through the Medallion Architecture.
+Notebooks 01–04 transform and validate the data through the Medallion Architecture.
+
+Notebook 05 builds the star-schema data model (dimension tables and referential integrity checks).
+
+Notebook 06 builds the Machine Learning components (clustering and goal prediction).
+
+7. Recreate the dashboard in Databricks using the exported definition in `dashboards/golstats_dashboard.lvdash.json`, or rebuild it manually against the Gold and dimension tables.
 
 ---
 
@@ -364,18 +480,19 @@ The remaining notebooks transform and validate the data through the Medallion Ar
 [x] Gold layer
 [x] Scale to complete World Cup
 [x] Data quality validation
-[ ] Power BI dashboard
-[ ] Advanced football analytics
-[ ] Feature engineering
-[ ] Machine Learning
+[x] Star-schema analytical data model
+[x] Databricks AI/BI Dashboard
+[x] Player profile clustering
+[x] Goal prediction model
 [ ] Databricks Workflows automation
+[ ] Player position as a modeling feature
 ```
 
 ---
 
 ## Project Objective
 
-The main objective of GolStats is to demonstrate an end-to-end **data engineering workflow** using a realistic analytical dataset.
+The main objective of GolStats is to demonstrate an end-to-end **data engineering and analytics workflow** using a realistic analytical dataset.
 
 The project focuses on:
 
@@ -388,6 +505,8 @@ The project focuses on:
 * Cross-layer reconciliation.
 * Scalability.
 * Reproducibility.
-* Downstream BI and Machine Learning readiness.
+* BI dashboarding.
+* Machine Learning (clustering and predictive modeling).
+* Honest reporting of model limitations.
 
 The project will continue evolving as new analytical and machine learning components are added.
