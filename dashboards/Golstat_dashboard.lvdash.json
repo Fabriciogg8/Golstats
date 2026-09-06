@@ -1,0 +1,580 @@
+{
+  "datasets": [
+    {
+      "name": "fd07d00f",
+      "displayName": "kpi_generales",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT\r\n  COUNT(DISTINCT match_id) AS total_partidos,\r\n  SUM(goals) AS total_goles,\r\n  ROUND(SUM(xg), 1) AS total_xg,\r\n  (SELECT COUNT(*) FROM golstats.gold.dim_jugador) AS total_jugadores\r\nFROM golstats.gold.estadisticas_equipo",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a77b1298",
+      "displayName": "equipos_ranking",
+      "queryLines": [
+        "SELECT team, SUM(goals) AS goles, ROUND(SUM(xg), 2) AS xg_total, ROUND(AVG(pass_completion_pct), 1) AS precision_pases, SUM(shots) AS tiros \r\n",
+        "FROM golstats.gold.estadisticas_equipo \r\n",
+        "GROUP BY team \r\n",
+        "ORDER BY goles DESC"
+      ]
+    },
+    {
+      "name": "09017009",
+      "displayName": "goalscorers",
+      "queryLines": [
+        "SELECT player, matches_played, goals, ROUND(xg, 2) AS xg, shots \r\n",
+        "FROM golstats.gold.player_tournament \r\n",
+        "ORDER BY goals DESC \r\n",
+        "LIMIT 15"
+      ]
+    },
+    {
+      "name": "eb2a6abf",
+      "displayName": "playmakers",
+      "queryLines": [
+        "SELECT player, matches_played, passes, completed_passes, ROUND(pass_completion_pct, 1) AS precision_pct \r\n",
+        "FROM golstats.gold.player_tournament \r\n",
+        "WHERE passes > 100 \r\n",
+        "ORDER BY passes DESC \r\n",
+        "LIMIT 15"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "b8e01dda",
+      "displayName": "Graphics",
+      "layout": [
+        {
+          "widget": {
+            "name": "games",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "fd07d00f",
+                  "fields": [
+                    {
+                      "name": "sum(total_partidos)",
+                      "expression": "SUM(`total_partidos`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\"><span style=\"font-size:24px\">Total Games</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_partidos)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "a82d7ea0",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "fd07d00f",
+                  "fields": [
+                    {
+                      "name": "sum(total_goles)",
+                      "expression": "SUM(`total_goles`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\"><span style=\"font-size:24px\">Total Gols</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_goles)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "11ff38b0",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "fd07d00f",
+                  "fields": [
+                    {
+                      "name": "sum(total_jugadores)",
+                      "expression": "SUM(`total_jugadores`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\"><span style=\"font-size:24px\">Total Players</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_jugadores)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "a5e55224",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "fd07d00f",
+                  "fields": [
+                    {
+                      "name": "sum(total_xg)",
+                      "expression": "SUM(`total_xg`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\"><span style=\"font-size:24px\">Total xG</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_xg)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "gols-by-team",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a77b1298",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "sum(goles)",
+                      "expression": "SUM(`goles`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Total Gols by team",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "team",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(goles)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 3,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "goles-vs-xg-por-equipo-sobre-bajo-rendimiento",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a77b1298",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "xg_total",
+                      "expression": "`xg_total`"
+                    },
+                    {
+                      "name": "goles",
+                      "expression": "`goles`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Goals vs. xG by team - over/underperformance",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "size": -0.4
+              },
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "xg_total",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "goles",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "extra": [
+                  {
+                    "fieldName": "team"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 9,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top-15-goalscorers-tournament",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "09017009",
+                  "fields": [
+                    {
+                      "name": "player",
+                      "expression": "`player`"
+                    },
+                    {
+                      "name": "matches_played",
+                      "expression": "`matches_played`"
+                    },
+                    {
+                      "name": "goals",
+                      "expression": "`goals`"
+                    },
+                    {
+                      "name": "xg",
+                      "expression": "`xg`"
+                    },
+                    {
+                      "name": "shots",
+                      "expression": "`shots`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Top 15 goalscorers of the tournament",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "player"
+                  },
+                  {
+                    "fieldName": "matches_played"
+                  },
+                  {
+                    "fieldName": "goals"
+                  },
+                  {
+                    "fieldName": "xg"
+                  },
+                  {
+                    "fieldName": "shots"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 15,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "23347348",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "eb2a6abf",
+                  "fields": [
+                    {
+                      "name": "player",
+                      "expression": "`player`"
+                    },
+                    {
+                      "name": "matches_played",
+                      "expression": "`matches_played`"
+                    },
+                    {
+                      "name": "passes",
+                      "expression": "`passes`"
+                    },
+                    {
+                      "name": "completed_passes",
+                      "expression": "`completed_passes`"
+                    },
+                    {
+                      "name": "precision_pct",
+                      "expression": "`precision_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Top 15 goalscorers of the tournament",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "player"
+                  },
+                  {
+                    "fieldName": "matches_played"
+                  },
+                  {
+                    "fieldName": "passes"
+                  },
+                  {
+                    "fieldName": "completed_passes"
+                  },
+                  {
+                    "fieldName": "precision_pct"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 21,
+            "width": 8,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
